@@ -27,7 +27,7 @@ export const JOB_SCOUT: AgentManifest = {
     inputSchema: { type: "object", properties: { query: { type: "string" } } },
     outputSchema: { type: "object", properties: { results: { type: "array", items: { type: "string" } } } }
   }],
-  memory: { mode: "short-term", provider: "local", binding: "jobs.json" },
+  memory: { mode: "long-term", provider: "local", binding: "job_history.json" },
   env: { required: [], optional: [] },
   tests: [{
     name: "find-react-job",
@@ -402,6 +402,10 @@ export const TIKTOK_TROOPER: AgentManifest = {
     name: "generate-tiktok-idea",
     input: "Create a TikTok idea for a new video game.",
     expect: { contains: ["game", "TikTok"] }
+  }, {
+    name: "generate-tiktok-trend-idea",
+    input: "Give me a TikTok idea using the 'burning memory' trend for a shoe brand.",
+    expect: { contains: ["shoe", "burning memory"] }
   }]
 };
 
@@ -429,6 +433,10 @@ export const FACEBOOK_FANATIC: AgentManifest = {
     name: "draft-facebook-post",
     input: "Draft a post for a 20% off sale.",
     expect: { contains: ["sale", "20% off"] }
+  }, {
+    name: "draft-facebook-poll",
+    input: "Write a poll question for our Facebook group about their favorite feature.",
+    expect: { contains: ["poll", "feature"] }
   }]
 };
 
@@ -456,6 +464,10 @@ export const INSTA_INFLUENCER: AgentManifest = {
     name: "create-instagram-caption",
     input: "Write a caption for a photo of our new office.",
     expect: { contains: ["office"] }
+  }, {
+    name: "plan-instagram-story",
+    input: "Plan a 3-day Instagram story series for a new product launch.",
+    expect: { contains: ["story", "product launch", "day 1"] }
   }]
 };
 
@@ -488,6 +500,10 @@ export const METRIC_MAVERICK: AgentManifest = {
     name: "analyze-metrics",
     input: "Analyze last month's Twitter performance.",
     expect: { contains: ["Twitter", "performance"] }
+  }, {
+    name: "analyze-specific-kpi",
+    input: "What was our engagement rate on Facebook for Q1?",
+    expect: { contains: ["engagement rate", "Facebook", "Q1"] }
   }]
 };
 
@@ -495,8 +511,8 @@ export const TREND_SPOTTER: AgentManifest = {
   schemaVersion: "agent.v1",
   id: "sm-5",
   name: "Trend-Spotter",
-  version: "1.0.0",
-  description: "Scans the internet for emerging trends, memes, and viral content.",
+  version: "1.1.0",
+  description: "Scans the internet using Google Search for emerging trends, memes, and viral content to provide real-time insights.",
   author: "Transform Army AI",
   display: { avatar: "📡" },
   language: { name: "typescript", version: "5.0" },
@@ -504,22 +520,26 @@ export const TREND_SPOTTER: AgentManifest = {
   execution: { kind: "process", command: "node", args: ["main.js"] },
   model: { provider: "Google Gemini", modelId: "gemini-2.5-flash", temperature: 0.7, maxTokens: 2048 },
   prompts: {
-    system: "You are a trend-spotting agent. You have your finger on the pulse of the internet, constantly scanning for the next big meme, challenge, or conversation. Your goal is to identify trends that brands can authentically participate in.",
-    assistant: "I'm detecting some new trends. What industry should I focus on?",
-    userStarters: ["What are the latest trends on TikTok?", "Is there a new meme format we can use?"]
+    system: "You are a trend-spotting agent supercharged with Google Search. You have your finger on the pulse of the internet, constantly scanning for the next big meme, challenge, or conversation. Your goal is to identify and summarize real-time trends that brands can authentically participate in, providing verifiable information.",
+    assistant: "I'm detecting some new trends using real-time data. What industry should I focus on?",
+    userStarters: ["What are the latest trends on TikTok right now?", "Is there a new meme format we can use for marketing?"]
   },
   tools: [{
-    name: "Web-Search",
-    description: "Searches social media and news sites for trending topics.",
+    name: "Google-Search",
+    description: "Searches Google for real-time, up-to-date information on trends, news, and topics.",
     inputSchema: { type: "object", properties: { query: { type: "string" } } },
-    outputSchema: { type: "object", properties: { results: { type: "array", items: { type: "string" } } } }
+    outputSchema: { type: "object", properties: { summary: { type: "string" }, sources: { type: "array", items: { type: "string" } } } }
   }],
   memory: { mode: "short-term", provider: "local", binding: "trends.json" },
-  env: { required: ["TREND_API_KEY"], optional: [] },
+  env: { required: [], optional: [] },
   tests: [{
     name: "find-trends",
-    input: "Find marketing trends for 2024.",
+    input: "Find marketing trends for this year.",
     expect: { contains: ["marketing", "trends"] }
+  }, {
+    name: "find-instagram-trends",
+    input: "What are the latest visual trends on Instagram for fashion brands?",
+    expect: { contains: ["Instagram", "fashion"] }
   }]
 };
 
@@ -547,6 +567,10 @@ export const ENGAGEMENT_ENGINEER: AgentManifest = {
     name: "ab-test-headline",
     input: "A/B test a headline for an article about remote work.",
     expect: { contains: ["headline", "remote work"] }
+  }, {
+    name: "optimize-cta",
+    input: "Suggest 3 different CTAs for an email newsletter sign-up.",
+    expect: { contains: ["CTA", "newsletter"] }
   }]
 };
 
@@ -574,6 +598,10 @@ export const COMMUNITY_CHAMPION: AgentManifest = {
     name: "draft-comment-response",
     input: "Draft a reply to a user asking about our shipping policy.",
     expect: { contains: ["shipping"] }
+  }, {
+    name: "create-engagement-post",
+    input: "Write a 'get to know you' post for our community.",
+    expect: { contains: ["community", "question"] }
   }]
 };
 
@@ -601,6 +629,10 @@ export const IDEA_SPARK: AgentManifest = {
     name: "brainstorm-campaign",
     input: "Brainstorm a campaign for an eco-friendly water bottle.",
     expect: { contains: ["eco-friendly", "water bottle"] }
+  }, {
+    name: "brainstorm-collaboration",
+    input: "What kind of influencer could we collaborate with for a tech gadget?",
+    expect: { contains: ["influencer", "tech gadget"] }
   }]
 };
 

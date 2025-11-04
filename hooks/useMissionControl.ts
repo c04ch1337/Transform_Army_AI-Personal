@@ -1,18 +1,19 @@
-// Fix: Import `React` to make the `React` namespace available for type annotations like `React.Dispatch`.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AgentManifest,
   AgentRuntimeState,
   AgentStatus,
+  AgentSubStatus,
   AgentTeamManifest,
   LogEntry,
   MissionStep,
   SlackMessage,
   SharedMemoryContents,
+  ChatMessage,
 } from '../types';
 import { ALL_TEAM_MANIFESTS, allAgents as initialAllAgents, ORACLE_ORCHESTRATOR, MISSIONS } from '../constants';
-import { generateMissionPlan, generateAgentThoughtStream } from '../services/geminiService';
-import { getInitialState } from '../utils/localStorage';
+import { generateMissionPlan, generateAgentThoughtStream, executeGroundedAgentTask, getOrchestratorChatResponse } from '../services/geminiService';
+import { useLocalStorage } from './useLocalStorage';
 import { playDeploySound, playAbortSound, playSuccessSound, playErrorSound, playClickSound } from '../utils/audio';
 
 const postSlackMessage = (
@@ -32,20 +33,20 @@ const postSlackMessage = (
 
 export const useMissionControl = () => {
   // Static state
-  const [allAgents, setAllAgents] = useState<{[id: string]: AgentManifest}>(() => getInitialState('allAgents', initialAllAgents));
+  const [allAgents, setAllAgents] = useLocalStorage<{[id: string]: AgentManifest}>('allAgents', initialAllAgents);
   const [teamManifests, setTeamManifests] = useState<AgentTeamManifest[]>(ALL_TEAM_MANIFESTS);
 
   // Control Panel State
-  const [selectedTeam, setSelectedTeam] = useState<string>(() => getInitialState('selectedTeam', ALL_TEAM_MANIFESTS[0].name));
-  const [selectedIndustry, setSelectedIndustry] = useState<string>(() => getInitialState('selectedIndustry', 'Technology'));
-  const [selectedProvider, setSelectedProvider] = useState<string>(() => getInitialState('selectedProvider', 'Google Gemini'));
-  const [selectedModel, setSelectedModel] = useState<string>(() => getInitialState('selectedModel', 'gemini-2.5-pro'));
+  const [selectedTeam, setSelectedTeam] = useLocalStorage<string>('selectedTeam', ALL_TEAM_MANIFESTS[0].name);
+  const [selectedIndustry, setSelectedIndustry] = useLocalStorage<string>('selectedIndustry', 'Technology');
+  const [selectedProvider, setSelectedProvider] = useLocalStorage<string>('selectedProvider', 'Google Gemini');
+  const [selectedModel, setSelectedModel] = useLocalStorage<string>('selectedModel', 'gemini-2.5-pro');
   
   // Mission State
   const [missionObjective, setMissionObjective] = useState<string>('');
-  const [targetAudience, setTargetAudience] = useState<string>(() => getInitialState('targetAudience', ''));
-  const [kpis, setKpis] = useState<string>(() => getInitialState('kpis', ''));
-  const [desiredOutcomes, setDesiredOutcomes] = useState<string>(() => getInitialState('desiredOutcomes', ''));
+  const [targetAudience, setTargetAudience] = useLocalStorage<string>('targetAudience', '');
+  const [kpis, setKpis] = useLocalStorage<string>('kpis', '');
+  const [desiredOutcomes, setDesiredOutcomes] = useLocalStorage<string>('desiredOutcomes', '');
   const [selectedMission, setSelectedMission] = useState<string>(MISSIONS[selectedTeam]?.[0] || '');
   const [isMissionActive, setIsMissionActive] = useState<boolean>(false);
   const [missionPlan, setMissionPlan] = useState<MissionStep[] | null>(null);
@@ -57,20 +58,26 @@ export const useMissionControl = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [slackHistory, setSlackHistory] = useState<SlackMessage[]>([]);
   const [sharedMemory, setSharedMemory] = useState<SharedMemoryContents>({});
-  const [agentUsingToolId, setAgentUsingToolId] = useState<string | null>(null);
+  const [orchestratorChatHistory, setOrchestratorChatHistory] = useState<ChatMessage[]>([]);
+  const [isOrchestratorReplying, setIsOrchestratorReplying] = useState(false);
 
   // UI State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isAbortModalOpen, setIsAbortModalOpen] = useState(false);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [vaultValues, setVaultValues] = useState<Record<string, string>>(() => getInitialState('vaultValues', {}));
+  const [isExportTeamModalOpen, setIsExportTeamModalOpen] = useState(false);
+  const [isImportTeamModalOpen, setIsImportTeamModalOpen] = useState(false);
+  const [isCreateAgentModalOpen, setIsCreateAgentModalOpen] = useState(false);
+  const [isExportAgentModalOpen, setIsExportAgentModalOpen] = useState(false);
+  const [isImportAgentModalOpen, setIsImportAgentModalOpen] = useState(false);
+  const [isDeleteAgentModalOpen, setIsDeleteAgentModalOpen] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [vaultValues, setVaultValues] = useLocalStorage<Record<string, string>>('vaultValues', {});
 
   // Simulation Settings
-  const [planningDelay, setPlanningDelay] = useState<number>(() => getInitialState('planningDelay', 2000));
-  const [stepExecutionDelay, setStepExecutionDelay] = useState<number>(() => getInitialState('stepExecutionDelay', 4000));
-  const [failureChance, setFailureChance] = useState<number>(() => getInitialState('failureChance', 15));
+  const [planningDelay, setPlanningDelay] = useLocalStorage<number>('planningDelay', 2000);
+  const [stepExecutionDelay, setStepExecutionDelay] = useLocalStorage<number>('stepExecutionDelay', 4000);
+  const [failureChance, setFailureChance] = useLocalStorage<number>('failureChance', 15);
 
   // Add sound effects to toasts
   useEffect(() => {
@@ -95,45 +102,21 @@ export const useMissionControl = () => {
     if (!currentTeamManifest) return [];
     const agentIds = new Set(currentTeamManifest.members.map(m => m.agentId));
     const keys = new Set<string>();
-    // Fix: Explicitly type `agent` as AgentManifest to resolve type inference issue.
     Object.values(allAgents).forEach((agent: AgentManifest) => {
         if (agentIds.has(agent.id)) {
             agent.env.required.forEach(key => keys.add(key));
         }
     });
+    // Add orchestrator key based on provider
+    if (selectedProvider !== 'Google Gemini') {
+        keys.add('OPENROUTER_API_KEY');
+    }
     return Array.from(keys);
-  }, [currentTeamManifest, allAgents]);
+  }, [currentTeamManifest, allAgents, selectedProvider]);
 
   const isReadyForDeployment = useMemo(() => {
     return requiredApiKeys.every(key => vaultValues[key] && vaultValues[key].trim() !== '');
   }, [requiredApiKeys, vaultValues]);
-
-  // Persist settings to localStorage
-  useEffect(() => localStorage.setItem('selectedTeam', selectedTeam), [selectedTeam]);
-  useEffect(() => localStorage.setItem('selectedIndustry', selectedIndustry), [selectedIndustry]);
-  useEffect(() => localStorage.setItem('selectedProvider', selectedProvider), [selectedProvider]);
-  useEffect(() => localStorage.setItem('selectedModel', selectedModel), [selectedModel]);
-  useEffect(() => localStorage.setItem('targetAudience', targetAudience), [targetAudience]);
-  useEffect(() => localStorage.setItem('kpis', kpis), [kpis]);
-  useEffect(() => localStorage.setItem('desiredOutcomes', desiredOutcomes), [desiredOutcomes]);
-  useEffect(() => localStorage.setItem('planningDelay', String(planningDelay)), [planningDelay]);
-  useEffect(() => localStorage.setItem('stepExecutionDelay', String(stepExecutionDelay)), [stepExecutionDelay]);
-  useEffect(() => localStorage.setItem('failureChance', String(failureChance)), [failureChance]);
-  useEffect(() => {
-    try {
-        localStorage.setItem('allAgents', JSON.stringify(allAgents));
-    } catch (error) {
-        console.error("Failed to save agents to localStorage", error);
-    }
-  }, [allAgents]);
-  useEffect(() => {
-    try {
-        localStorage.setItem('vaultValues', JSON.stringify(vaultValues));
-    } catch (error) {
-        console.error("Failed to save vault values to localStorage", error);
-    }
-  }, [vaultValues]);
-
 
   // Update document title based on mission status
   useEffect(() => {
@@ -165,6 +148,7 @@ export const useMissionControl = () => {
           id: manifest.id,
           name: manifest.name,
           status: AgentStatus.STANDBY,
+          subStatus: null,
           currentTask: '',
           currentThought: '',
           manifest,
@@ -174,6 +158,19 @@ export const useMissionControl = () => {
       setAgents([]);
     }
   }, [selectedTeam, teamManifests, allAgents, currentTeamManifest]);
+
+  // Initialize orchestrator chat with a welcome message when the team changes
+  useEffect(() => {
+    if (currentTeamManifest) {
+        const welcomeMessage: ChatMessage = {
+            id: `welcome-${Date.now()}`,
+            sender: 'orchestrator',
+            text: `I am ORACLE, the orchestrator for the **${currentTeamManifest.displayName || currentTeamManifest.name}**. How can I assist you with planning your mission today? You can ask about the team's capabilities or discuss potential objectives.`,
+            timestamp: new Date().toISOString(),
+        };
+        setOrchestratorChatHistory([welcomeMessage]);
+    }
+  }, [selectedTeam, teamManifests, currentTeamManifest]);
   
   const addLog = useCallback((source: string, message: string, type: LogEntry['type']) => {
     const newLog: LogEntry = {
@@ -202,21 +199,20 @@ export const useMissionControl = () => {
     // Set failed agent to ERROR, others to standby
     setAgents(prev => prev.map(a => {
         if (a.id === failedAgent.id) {
-            return {...a, status: AgentStatus.ERROR, currentTask: 'Task Failed', currentThought: ''};
+            return {...a, status: AgentStatus.ERROR, subStatus: null, currentTask: 'Task Failed', currentThought: ''};
         }
         // If agent was already completed, keep it that way. Otherwise, standby.
         if (a.status !== AgentStatus.TASK_COMPLETED) {
-            return {...a, status: AgentStatus.STANDBY, currentTask: '', currentThought: ''};
+            return {...a, status: AgentStatus.STANDBY, subStatus: null, currentTask: '', currentThought: ''};
         }
         return a;
     }));
-
-    setAgentUsingToolId(null);
   }, [addLog, teamHasSlackAdmin]);
 
 
   // The main mission execution loop
   useEffect(() => {
+    // Exit if mission isn't active or is complete
     if (!isMissionActive || !missionPlan || missionExecutionIndex >= missionPlan.length) {
       if (isMissionActive && missionPlan && missionExecutionIndex >= missionPlan.length) {
         // Mission complete
@@ -227,89 +223,125 @@ export const useMissionControl = () => {
         setIsMissionActive(false);
         setCompletedPlan(missionPlan);
         setIsSummaryModalOpen(true);
-        setAgentUsingToolId(null);
         playSuccessSound();
-        // Reset agents to standby
-        setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, currentTask: '', currentThought: ''})));
+        setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, subStatus: null, currentTask: '', currentThought: ''})));
       }
       return;
     }
-
+    
+    let isCancelled = false;
     const step = missionPlan[missionExecutionIndex];
     const agentRuntimeState = agents.find(a => a.name === step.agent);
-    
-    const timeoutId = setTimeout(() => {
-      // Set previous agent to completed
-      if (missionExecutionIndex > 0) {
+
+    const processStep = async () => {
+       if (missionExecutionIndex > 0) {
         const prevStep = missionPlan[missionExecutionIndex - 1];
-        setAgents(prev => prev.map(a => a.name === prevStep.agent ? {...a, status: AgentStatus.TASK_COMPLETED, currentThought: '' } : a));
+        setAgents(prev => prev.map(a => a.name === prevStep.agent ? {...a, status: AgentStatus.TASK_COMPLETED, subStatus: null, currentThought: '' } : a));
       }
 
       if (!agentRuntimeState) {
           addLog('SYSTEM', `Error: Could not find agent "${step.agent}" for current step. Aborting mission.`, 'ERROR');
-          if (teamHasSlackAdmin) {
-              postSlackMessage(setSlackHistory, 'error-bot', `CRITICAL ERROR: Agent "${step.agent}" not found. Mission aborted.`);
-          }
+          if (teamHasSlackAdmin) postSlackMessage(setSlackHistory, 'error-bot', `CRITICAL ERROR: Agent "${step.agent}" not found. Mission aborted.`);
           setIsMissionActive(false);
           playErrorSound();
           return;
       }
        
-      // Simulate a chance of task failure. Don't fail the first step.
       if (missionExecutionIndex > 0 && Math.random() < (failureChance / 100)) {
         handleMissionFailure(step, agentRuntimeState);
-        return; // Stop the execution loop
+        return;
       }
 
-      // Set current agent to processing and stream thoughts
-      (async () => {
-        setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, status: AgentStatus.PROCESSING, currentTask: step.task, currentThought: ''} : a));
-        addLog(agentRuntimeState.name, `Executing task: "${step.task}"`, 'STATUS');
-        if (teamHasSlackAdmin) {
-          postSlackMessage(setSlackHistory, 'system-bot', `[${agentRuntimeState.name}] has started task: "${step.task}"`);
-        }
-
-        try {
-            const thoughtStream = generateAgentThoughtStream(agentRuntimeState.manifest, step.task, missionObjective, selectedModel);
-            for await (const thoughtChunk of thoughtStream) {
-                setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: (a.currentThought || '') + thoughtChunk } : a));
-            }
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            addLog(agentRuntimeState.name, `Failed to generate thought process: ${errorMessage}`, 'ERROR');
-            setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: "[Thought process failed to generate.]" } : a));
-        }
-      })();
+      addLog(agentRuntimeState.name, `Executing task: "${step.task}"`, 'STATUS');
+      if (teamHasSlackAdmin) postSlackMessage(setSlackHistory, 'system-bot', `[${agentRuntimeState.name}] has started task: "${step.task}"`);
       
-      // Simulate tool usage
-      const toolUsed = agentRuntimeState.manifest.tools.find(tool => step.task.toLowerCase().includes(tool.name.toLowerCase()));
-      if (toolUsed) {
-        setAgentUsingToolId(agentRuntimeState.id);
-        addLog(agentRuntimeState.name, `Using tool: 🛠️ ${toolUsed.name}`, 'COMMAND');
-      } else {
-        setAgentUsingToolId(null);
-      }
+      setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, status: AgentStatus.PROCESSING, subStatus: AgentSubStatus.THINKING, currentTask: step.task, currentThought: ''} : a));
       
-      if (teamHasSlackAdmin) {
-        postSlackMessage(setSlackHistory, 'system-bot', `✅ [${agentRuntimeState.name}] has completed task: "${step.task}"`);
-      }
+      // Special handling for Trend-Spotter to use grounding
+      if (agentRuntimeState.name === 'Trend-Spotter') {
+          try {
+              setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: 'Accessing Google Search for real-time trend data...' } : a));
+              await new Promise(resolve => setTimeout(resolve, 1500)); // UI delay
 
-      // Simulate adding to shared memory
-      setSharedMemory(prev => ({
-          ...prev,
-          [`task_${missionExecutionIndex}_result`]: {
-              value: `Completed: ${step.task}`,
-              writtenBy: agentRuntimeState.name,
-              timestamp: new Date().toISOString()
+              const response = await executeGroundedAgentTask(agentRuntimeState.manifest, step.task, missionObjective, selectedModel, selectedProvider, vaultValues);
+              const resultText = response.text;
+              const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+              const citations = groundingChunks?.map((chunk: any) => chunk.web?.uri).filter(Boolean);
+
+              if (citations && citations.length > 0) {
+                  addLog(agentRuntimeState.name, `Sources found: ${citations.join(', ')}`, 'INFO');
+              }
+              
+              setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: 'Finalizing grounded response...' } : a));
+
+              setSharedMemory(prev => ({
+                  ...prev,
+                  [`task_${missionExecutionIndex}_result`]: {
+                      value: resultText,
+                      writtenBy: agentRuntimeState.name,
+                      timestamp: new Date().toISOString(),
+                      citations: citations || [],
+                  }
+              }));
+              addLog(agentRuntimeState.name, `Wrote grounded result for task "${step.task}" to shared memory.`, 'INFO');
+          } catch (error) {
+              handleMissionFailure(step, agentRuntimeState);
+              return;
           }
-      }));
-      addLog(agentRuntimeState.name, `Wrote result for task "${step.task}" to shared memory.`, 'INFO');
+      } else {
+        // Standard agent execution (simulated)
+        try {
+          const thoughtStream = generateAgentThoughtStream(agentRuntimeState.manifest, step.task, missionObjective, selectedModel, selectedProvider, vaultValues);
+          for await (const thoughtChunk of thoughtStream) {
+              if (isCancelled) return;
+              setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: (a.currentThought || '') + thoughtChunk } : a));
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+          addLog(agentRuntimeState.name, `Failed to generate thought process: ${errorMessage}`, 'ERROR');
+          if (!isCancelled) setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, currentThought: "[Thought process failed to generate.]" } : a));
+        }
 
+        if (isCancelled) return;
+        
+        const toolUsed = agentRuntimeState.manifest.tools.find(tool => step.task.toLowerCase().includes(tool.name.toLowerCase()));
+        if (toolUsed) {
+          setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, subStatus: AgentSubStatus.USING_TOOL } : a));
+          addLog(agentRuntimeState.name, `Using tool: 🛠️ ${toolUsed.name}`, 'COMMAND');
+          await new Promise(resolve => setTimeout(resolve, stepExecutionDelay / 2));
+        }
+
+        setSharedMemory(prev => ({
+            ...prev,
+            [`task_${missionExecutionIndex}_result`]: {
+                value: `Completed: ${step.task}`,
+                writtenBy: agentRuntimeState.name,
+                timestamp: new Date().toISOString()
+            }
+        }));
+        addLog(agentRuntimeState.name, `Wrote result for task "${step.task}" to shared memory.`, 'INFO');
+      }
+      
+      if (isCancelled) return;
+
+      // Phase 3: Final Execution
+      setAgents(prev => prev.map(a => a.id === agentRuntimeState.id ? {...a, subStatus: null } : a));
+      await new Promise(resolve => setTimeout(resolve, stepExecutionDelay / 2));
+      
+      if (isCancelled) return;
+
+      if (teamHasSlackAdmin) postSlackMessage(setSlackHistory, 'system-bot', `✅ [${agentRuntimeState.name}] has completed task: "${step.task}"`);
+      
       setMissionExecutionIndex(prev => prev + 1);
-    }, stepExecutionDelay);
+    };
 
-    return () => clearTimeout(timeoutId);
-  }, [isMissionActive, missionPlan, missionExecutionIndex, addLog, missionObjective, agents, selectedModel, teamHasSlackAdmin, handleMissionFailure, stepExecutionDelay, failureChance]);
+    const timeoutId = setTimeout(processStep, stepExecutionDelay);
+
+    return () => { 
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [isMissionActive, missionPlan, missionExecutionIndex, agents, failureChance, handleMissionFailure, addLog, missionObjective, teamHasSlackAdmin, stepExecutionDelay, selectedModel, selectedProvider, vaultValues]);
 
 
   const resetMission = useCallback(() => {
@@ -319,8 +351,7 @@ export const useMissionControl = () => {
     setLogs([]);
     setSlackHistory([]);
     setSharedMemory({});
-    setAgentUsingToolId(null);
-    setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, currentTask: '', currentThought: ''})));
+    setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, subStatus: null, currentTask: '', currentThought: ''})));
   }, []);
 
   const handleDeployMission = useCallback(async () => {
@@ -336,10 +367,6 @@ export const useMissionControl = () => {
       setToast({ message: 'Cannot deploy: Missing required API keys in Secure Vault.', type: 'error' });
       return;
     }
-    if (selectedProvider !== 'Google Gemini') {
-      setToast({ message: 'Deployment failed: Only Google Gemini models are currently supported by the orchestrator.', type: 'error' });
-      return;
-    }
     
     playDeploySound();
     resetMission();
@@ -351,7 +378,6 @@ export const useMissionControl = () => {
     }
 
     try {
-      // Simulate planning phase
       await new Promise(resolve => setTimeout(resolve, planningDelay));
       
       const teamAgents = currentTeamManifest.members.map(m => allAgents[m.agentId]).filter(Boolean);
@@ -364,7 +390,9 @@ export const useMissionControl = () => {
         selectedModel,
         targetAudience,
         kpis,
-        desiredOutcomes
+        desiredOutcomes,
+        selectedProvider,
+        vaultValues
       );
       
       if (!plan || plan.length === 0) {
@@ -373,7 +401,6 @@ export const useMissionControl = () => {
 
       addLog('ORACLE', 'Mission plan generated successfully. Deploying agents.', 'STATUS');
       setMissionPlan(plan);
-      // Kick off the execution loop by setting the index to 0
       setMissionExecutionIndex(0);
       setAgents(prev => prev.map(a => ({...a, status: AgentStatus.DEPLOYED})));
 
@@ -385,9 +412,9 @@ export const useMissionControl = () => {
       }
       setToast({ message: `Mission planning failed: ${errorMessage}`, type: 'error' });
       setIsMissionActive(false);
-      setAgents(prev => prev.map(a => ({...a, status: AgentStatus.ERROR, currentTask: 'Planning Failed'})));
+      setAgents(prev => prev.map(a => ({...a, status: AgentStatus.ERROR, subStatus: null, currentTask: 'Planning Failed'})));
     }
-  }, [missionObjective, targetAudience, kpis, desiredOutcomes, currentTeamManifest, selectedIndustry, allAgents, addLog, resetMission, isReadyForDeployment, selectedProvider, selectedModel, teamHasSlackAdmin, planningDelay]);
+  }, [missionObjective, targetAudience, kpis, desiredOutcomes, currentTeamManifest, selectedIndustry, allAgents, addLog, resetMission, isReadyForDeployment, selectedProvider, selectedModel, vaultValues, teamHasSlackAdmin, planningDelay]);
 
   const handleAbortMission = useCallback(() => {
     playAbortSound();
@@ -398,12 +425,11 @@ export const useMissionControl = () => {
     if (teamHasSlackAdmin) {
         postSlackMessage(setSlackHistory, 'error-bot', `🛑 MISSION ABORTED BY USER.`);
     }
-    setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, currentTask: 'Aborted', currentThought: ''})));
+    setAgents(prev => prev.map(a => ({...a, status: AgentStatus.STANDBY, subStatus: null, currentTask: 'Aborted', currentThought: ''})));
     setIsAbortModalOpen(false);
-    setAgentUsingToolId(null);
   }, [addLog, teamHasSlackAdmin]);
 
-  const handleImport = (jsonString: string) => {
+  const handleImportTeam = (jsonString: string) => {
     try {
         const data = JSON.parse(jsonString);
         if (!data.team || !data.agents || data.exportVersion !== "1.0") {
@@ -439,17 +465,17 @@ export const useMissionControl = () => {
 
         setSelectedTeam(newTeam.name);
         setToast({ message: `Successfully imported team: ${newTeam.name}`, type: 'success' });
-        setIsImportModalOpen(false);
+        setIsImportTeamModalOpen(false);
     } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to parse JSON.";
         setToast({ message: `Import failed: ${message}`, type: 'error' });
     }
   };
 
-  const handleExport = () => {
+  const handleExportTeam = () => {
     if (!currentTeamManifest) return;
     playClickSound();
-    setIsExportModalOpen(true);
+    setIsExportTeamModalOpen(true);
   };
 
   const handleSlackCommand = useCallback((command: string) => {
@@ -480,10 +506,167 @@ export const useMissionControl = () => {
     }
   }, [isMissionActive, missionPlan, missionExecutionIndex]);
   
-  const exportData = useMemo(() => {
+  const handleCreateAgent = (name: string, description: string) => {
+    const newId = `custom-${Date.now()}`;
+    const newAgent: AgentManifest = {
+      schemaVersion: "agent.v1",
+      id: newId,
+      name: name,
+      version: "1.0.0",
+      description: description,
+      author: "User",
+      display: { avatar: "👤" },
+      language: { name: "typescript", version: "5.0" },
+      runtime: { engine: "nodejs", framework: "none", entrypoint: "main.js" },
+      execution: { kind: "process", command: "node", args: ["main.js"] },
+      model: { provider: "Google Gemini", modelId: "gemini-2.5-flash", temperature: 0.7, maxTokens: 2048 },
+      prompts: {
+        system: `You are a custom agent named ${name}. Your purpose is: ${description}`,
+        assistant: "I am ready for my assignment.",
+        userStarters: []
+      },
+      tools: [],
+      memory: { mode: "short-term", provider: "local", binding: `memory_${newId}.json` },
+      env: { required: [], optional: [] },
+      tests: [{
+        name: "smoke-test",
+        input: "Introduce yourself.",
+        expect: { contains: [name] }
+      }]
+    };
+
+    setAllAgents(prev => ({ ...prev, [newId]: newAgent }));
+    setIsCreateAgentModalOpen(false);
+    setToast({ message: `Agent '${name}' created successfully!`, type: 'success' });
+  };
+
+  const handleExportAgent = () => {
+    playClickSound();
+    setIsExportAgentModalOpen(true);
+  };
+  
+  const handleImportAgent = (jsonString: string) => {
+    try {
+        const data = JSON.parse(jsonString);
+        if (!data.agent || data.exportVersion !== "1.0") {
+            throw new Error("Invalid or unsupported single agent export file format. Expected a root 'agent' key.");
+        }
+        const newAgent: AgentManifest = data.agent;
+
+        if (!newAgent.id || !newAgent.name || !newAgent.schemaVersion) {
+            throw new Error("Imported agent manifest is missing required fields (id, name, schemaVersion).");
+        }
+        if (allAgents[newAgent.id]) {
+            throw new Error(`An agent with the ID "${newAgent.id}" already exists. Please use a unique ID.`);
+        }
+
+        // Add import metadata
+        newAgent.importMeta = {
+            source: 'user-paste',
+            sourceType: 'user-paste',
+            timestamp: new Date().toISOString(),
+        };
+
+        setAllAgents(prev => ({ ...prev, [newAgent.id]: newAgent }));
+
+        setToast({ message: `Successfully imported agent: ${newAgent.name}`, type: 'success' });
+        setIsImportAgentModalOpen(false);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to parse JSON.";
+        setToast({ message: `Import failed: ${message}`, type: 'error' });
+    }
+  };
+
+  const handleDeleteAgent = useCallback(() => {
+    if (!selectedAgentId) return;
+
+    const agentToDelete = allAgents[selectedAgentId];
+    if (!agentToDelete) return;
+
+    playAbortSound();
+
+    // 1. Remove from allAgents
+    setAllAgents(prevAllAgents => {
+        const newAgents = { ...prevAllAgents };
+        delete newAgents[selectedAgentId];
+        return newAgents;
+    });
+
+    // 2. Remove from any teams it belongs to
+    setTeamManifests(prevTeams =>
+        prevTeams.map(team => ({
+            ...team,
+            members: team.members.filter(member => member.agentId !== selectedAgentId)
+        }))
+    );
+
+    // 3. Reset UI state
+    setSelectedAgentId(null);
+    setIsDeleteAgentModalOpen(false);
+    setToast({ message: `Agent '${agentToDelete.name}' and all team associations have been deleted.`, type: 'success' });
+  }, [selectedAgentId, allAgents, setAllAgents, setTeamManifests, setSelectedAgentId, setIsDeleteAgentModalOpen, setToast]);
+  
+  const handleSendOrchestratorMessage = async (messageText: string) => {
+    if (!messageText.trim() || !currentTeamManifest) return;
+
+    const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        sender: 'user',
+        text: messageText,
+        timestamp: new Date().toISOString(),
+    };
+    
+    const thinkingMessage: ChatMessage = {
+        id: `orchestrator-thinking-${Date.now()}`,
+        sender: 'orchestrator',
+        text: '...',
+        timestamp: new Date().toISOString(),
+    };
+
+    const currentHistory = [...orchestratorChatHistory, userMessage];
+    setOrchestratorChatHistory(prev => [...prev, userMessage, thinkingMessage]);
+    setIsOrchestratorReplying(true);
+
+    try {
+        const teamAgents = currentTeamManifest.members.map(m => allAgents[m.agentId]).filter(Boolean);
+        const responseText = await getOrchestratorChatResponse(
+            currentHistory,
+            ORACLE_ORCHESTRATOR,
+            currentTeamManifest,
+            teamAgents,
+            selectedModel,
+            selectedProvider,
+            vaultValues
+        );
+
+        const orchestratorResponse: ChatMessage = {
+            id: `orchestrator-${Date.now()}`,
+            sender: 'orchestrator',
+            text: responseText,
+            timestamp: new Date().toISOString(),
+        };
+
+        setOrchestratorChatHistory(prev => [...prev.slice(0, -1), orchestratorResponse]);
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        const errorResponse: ChatMessage = {
+            id: `orchestrator-error-${Date.now()}`,
+            sender: 'orchestrator',
+            text: `Sorry, I encountered an error: ${errorMessage}`,
+            timestamp: new Date().toISOString(),
+        };
+        setOrchestratorChatHistory(prev => [...prev.slice(0, -1), errorResponse]);
+        setToast({ message: `Orchestrator chat failed: ${errorMessage}`, type: 'error' });
+    } finally {
+        setIsOrchestratorReplying(false);
+    }
+  };
+
+
+  const exportTeamData = useMemo(() => {
     if (!currentTeamManifest) return null;
     const teamAgentIds = new Set(currentTeamManifest.members.map(m => m.agentId));
-    // Fix: Explicitly type `a` as AgentManifest to resolve type inference issue.
     const agentsToExport = Object.values(allAgents).filter((a: AgentManifest) => teamAgentIds.has(a.id));
     return {
         team: currentTeamManifest,
@@ -513,19 +696,25 @@ export const useMissionControl = () => {
     toast,
     isAbortModalOpen,
     isSummaryModalOpen,
-    isExportModalOpen,
-    isImportModalOpen,
+    isExportTeamModalOpen,
+    isImportTeamModalOpen,
+    isCreateAgentModalOpen,
+    isExportAgentModalOpen,
+    isImportAgentModalOpen,
+    isDeleteAgentModalOpen,
+    selectedAgentId,
     teamManifests,
-    exportData,
+    exportTeamData,
     completedPlan,
     requiredApiKeys,
     vaultValues,
     isReadyForDeployment,
-    agentUsingToolId,
     allAgents,
     planningDelay,
     stepExecutionDelay,
     failureChance,
+    orchestratorChatHistory,
+    isOrchestratorReplying,
 
     // Setters
     setMissionObjective,
@@ -540,8 +729,13 @@ export const useMissionControl = () => {
     setToast,
     setIsAbortModalOpen,
     setIsSummaryModalOpen,
-    setIsExportModalOpen,
-    setIsImportModalOpen,
+    setIsExportTeamModalOpen,
+    setIsImportTeamModalOpen,
+    setIsCreateAgentModalOpen,
+    setIsExportAgentModalOpen,
+    setIsImportAgentModalOpen,
+    setIsDeleteAgentModalOpen,
+    setSelectedAgentId,
     setVaultValues,
     setAllAgents,
     setPlanningDelay,
@@ -551,8 +745,13 @@ export const useMissionControl = () => {
     // Handlers
     handleDeployMission,
     handleAbortMission,
-    handleImport,
-    handleExport,
+    handleImportTeam,
+    handleExportTeam,
     handleSlackCommand,
+    handleCreateAgent,
+    handleExportAgent,
+    handleImportAgent,
+    handleDeleteAgent,
+    handleSendOrchestratorMessage,
   };
 };

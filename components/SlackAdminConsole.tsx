@@ -1,11 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SlackMessage } from '../types';
-
-interface SlackAdminConsoleProps {
-  messages: SlackMessage[];
-  onSendCommand: (command: string) => void;
-  isDisabled: boolean;
-}
+import { useMission } from '../App';
+import { Avatar } from './Avatar';
 
 const senderConfig = {
     'user': {
@@ -25,7 +21,13 @@ const senderConfig = {
     }
 };
 
-export const SlackAdminConsole: React.FC<SlackAdminConsoleProps> = ({ messages, onSendCommand, isDisabled }) => {
+export const SlackAdminConsole: React.FC = () => {
+  const { 
+    slackHistory: messages, 
+    handleSlackCommand: onSendCommand, 
+    isMissionActive: isDisabled 
+  } = useMission();
+
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +51,9 @@ export const SlackAdminConsole: React.FC<SlackAdminConsoleProps> = ({ messages, 
                 const config = senderConfig[msg.sender];
                 return (
                     <div key={msg.id} className="flex items-start">
-                        <div className="mr-3 text-lg">{config.icon}</div>
+                        <div className="mr-3 flex-shrink-0">
+                            <Avatar avatar={config.icon} name={config.name} className="text-xl" />
+                        </div>
                         <div className="flex-1">
                             <div className="flex items-baseline">
                                 <span className={`font-bold mr-2 ${config.color}`}>{config.name}</span>

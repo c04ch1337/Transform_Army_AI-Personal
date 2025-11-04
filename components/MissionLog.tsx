@@ -1,10 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { LogEntry } from '../types';
 import { EmptyState } from './EmptyState';
-
-interface MissionLogProps {
-  logs: LogEntry[];
-}
+import { useMission } from '../App';
 
 const logTypeConfig = {
     COMMAND: 'text-purple-400',
@@ -14,7 +11,8 @@ const logTypeConfig = {
     INFO: 'text-gray-400',
 };
 
-export const MissionLog: React.FC<MissionLogProps> = ({ logs }) => {
+export const MissionLog: React.FC = () => {
+  const { logs } = useMission();
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

@@ -3,26 +3,9 @@ import { MissionStep } from '../types';
 import { Typewriter } from './Typewriter';
 import { EmptyState } from './EmptyState';
 import { Tooltip } from './Tooltip';
+import { useMission } from '../App';
 
-interface OrchestratorConsoleProps {
-  missionObjective: string;
-  setMissionObjective: (value: string) => void;
-  targetAudience: string;
-  setTargetAudience: (value: string) => void;
-  kpis: string;
-  setKpis: (value: string) => void;
-  desiredOutcomes: string;
-  setDesiredOutcomes: (value: string) => void;
-  onDeploy: () => void;
-  isMissionActive: boolean;
-  isReadyForDeployment: boolean;
-  missionPlan: MissionStep[] | null;
-  missionExecutionIndex: number;
-  selectedProvider: string;
-  selectedModel: string;
-}
-
-const MissionParameterInput: React.FC<{
+interface MissionParameterInputProps {
   id: string;
   label: string;
   value: string;
@@ -30,7 +13,9 @@ const MissionParameterInput: React.FC<{
   disabled: boolean;
   placeholder: string;
   rows?: number;
-}> = ({ id, label, value, onChange, disabled, placeholder, rows = 2 }) => (
+}
+
+const MissionParameterInput: React.FC<MissionParameterInputProps> = ({ id, label, value, onChange, disabled, placeholder, rows = 2 }) => (
   <div>
     <label htmlFor={id} className="block text-xs font-display text-pink-400 mb-1 tracking-widest">{label}</label>
     <textarea
@@ -46,27 +31,30 @@ const MissionParameterInput: React.FC<{
 );
 
 
-export const OrchestratorConsole: React.FC<OrchestratorConsoleProps> = ({
-  missionObjective,
-  setMissionObjective,
-  targetAudience,
-  setTargetAudience,
-  kpis,
-  setKpis,
-  desiredOutcomes,
-  setDesiredOutcomes,
-  onDeploy,
-  isMissionActive,
-  isReadyForDeployment,
-  missionPlan,
-  missionExecutionIndex,
-  selectedProvider,
-  selectedModel,
-}) => {
+export const OrchestratorConsole: React.FC = () => {
+  const {
+    missionObjective,
+    setMissionObjective,
+    targetAudience,
+    setTargetAudience,
+    kpis,
+    setKpis,
+    desiredOutcomes,
+    setDesiredOutcomes,
+    handleDeployMission,
+    isMissionActive,
+    isReadyForDeployment,
+    missionPlan,
+    missionExecutionIndex,
+    selectedProvider,
+    selectedModel,
+  } = useMission();
+
+  const onDeploy = handleDeployMission;
+
   const isPlanning = isMissionActive && !missionPlan;
   const isExecuting = isMissionActive && missionPlan;
   
-  const isGeminiProvider = selectedProvider === 'Google Gemini';
   const isModelSelected = selectedModel && selectedModel.trim() !== '';
 
   const areAllFieldsFilled = 
@@ -75,14 +63,20 @@ export const OrchestratorConsole: React.FC<OrchestratorConsoleProps> = ({
     kpis.trim() &&
     desiredOutcomes.trim();
     
-  const isButtonDisabled = isMissionActive || !areAllFieldsFilled || !isReadyForDeployment || !isGeminiProvider || !isModelSelected;
+  const getDeploymentStatus = () => {
+    if (!isReadyForDeployment) return "API KEY(S) MISSING IN SECURE VAULT";
+    if (!isModelSelected) return "SELECT A MODEL IN MISSION CONTROL";
+    if (!areAllFieldsFilled) return "FILL IN ALL MISSION PARAMETERS";
+    return "READY FOR DEPLOYMENT";
+  };
+
+  const deploymentStatus = getDeploymentStatus();
+  const isDeployable = deploymentStatus === "READY FOR DEPLOYMENT";
+  const isButtonDisabled = isMissionActive || !isDeployable;
 
   const getTooltipText = () => {
     if (isMissionActive) return "Mission is currently active.";
-    if (!isReadyForDeployment) return "Set all required API keys in the Secure Vault.";
-    if (!isGeminiProvider) return "Only Google Gemini provider is supported.";
-    if (!isModelSelected) return "Please select a model from Mission Control.";
-    if (!areAllFieldsFilled) return "Enter all mission parameters.";
+    if (!isDeployable) return deploymentStatus;
     return "Let's go!";
   };
 
@@ -138,6 +132,11 @@ export const OrchestratorConsole: React.FC<OrchestratorConsoleProps> = ({
                     </button>
                 </span>
             </Tooltip>
+            {!isMissionActive && (
+              <div className={`mt-2 text-center font-display text-xs tracking-widest ${isDeployable ? 'text-green-400' : 'text-yellow-400'}`}>
+                STATUS: {deploymentStatus}
+              </div>
+            )}
             
             <div className="mt-4 border-t border-pink-500/30 pt-3">
                 <h3 className="font-display text-pink-400 text-sm mb-2">MISSION PLAN:</h3>

@@ -1,25 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { AgentTeamManifest, AgentManifest } from '../types';
+import { AgentManifest } from '../types';
 import { Modal } from './Modal';
 
-interface ExportModalProps {
+interface ExportAgentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  exportData: {
-    team: AgentTeamManifest;
-    agents: AgentManifest[];
-  } | null;
+  exportData: AgentManifest | null;
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, exportData }) => {
+export const ExportAgentModal: React.FC<ExportAgentModalProps> = ({ isOpen, onClose, exportData }) => {
   const [copyStatus, setCopyStatus] = useState<'IDLE' | 'SUCCESS'>('IDLE');
   
   const exportJsonString = exportData 
     ? JSON.stringify({
-        "//": "Agent Change of Command (ACoC) Export File",
+        "//": "Agent Change of Command (ACoC) Single Agent Export File",
         "exportVersion": "1.0",
         "timestamp": new Date().toISOString(),
-        ...exportData
+        "agent": exportData
       }, null, 2)
     : '';
 
@@ -57,12 +54,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, expor
     <Modal 
         isOpen={isOpen}
         onClose={onClose}
-        title="EXPORT TEAM MANIFEST"
+        title="EXPORT AGENT MANIFEST"
         footer={footer}
         className="max-w-2xl"
     >
         <p className="text-gray-400 font-mono mb-4 text-sm border-b border-pink-500/30 pb-4">
-          Exporting manifest for: <span className="font-bold text-pink-400">{exportData?.team.name}</span>
+          Exporting manifest for: <span className="font-bold text-pink-400">{exportData?.name}</span>
         </p>
         
         <div className="overflow-y-auto pr-2 flex-grow bg-black text-white font-mono text-xs p-4 rounded-md">

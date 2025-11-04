@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import Header from './components/Header';
 import ControlPanel from './components/ControlPanel';
 import { AgentSwarmView } from './components/AgentSwarmView';
@@ -14,136 +14,110 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { MissionSummaryModal } from './components/MissionSummaryModal';
 import { ExportModal } from './components/ExportModal';
 import { ImportModal } from './components/ImportModal';
+import { CreateAgentModal } from './components/CreateAgentModal';
+import { ExportAgentModal } from './components/ExportAgentModal';
+import { ImportAgentModal } from './components/ImportAgentModal';
 import { Toast } from './components/Toast';
 import { ResizablePanel } from './components/ResizablePanel';
 import { useMissionControl } from './hooks/useMissionControl';
-import { allAgents as initialAllAgents } from './constants';
+import { OrchestratorChat } from './components/OrchestratorChat';
 
-const App: React.FC = () => {
+// =================================================================
+// CONTEXT SETUP
+// =================================================================
+
+// Create a type for the hook's return value to avoid using `any`
+type MissionControlContextType = ReturnType<typeof useMissionControl>;
+
+const MissionContext = createContext<MissionControlContextType | undefined>(undefined);
+
+// The custom hook that components will use to access the context
+export const useMission = (): MissionControlContextType => {
+  const context = useContext(MissionContext);
+  if (context === undefined) {
+    throw new Error('useMission must be used within a MissionProvider');
+  }
+  return context;
+};
+
+// The provider component that wraps the app and provides the context
+const MissionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const missionControl = useMissionControl();
+  return (
+    <MissionContext.Provider value={missionControl}>
+      {children}
+    </MissionContext.Provider>
+  );
+};
+
+
+// =================================================================
+// LAYOUT COMPONENT
+// =================================================================
+// This component contains the entire UI, and uses the context to get state.
+const Layout: React.FC = () => {
   const {
-    agents,
-    logs,
-    slackHistory,
-    sharedMemory,
-    selectedTeam,
-    selectedIndustry,
-    selectedProvider,
-    selectedModel,
-    missionObjective,
-    targetAudience,
-    kpis,
-    desiredOutcomes,
-    selectedMission,
-    isMissionActive,
-    missionPlan,
-    missionExecutionIndex,
     toast,
     isAbortModalOpen,
     isSummaryModalOpen,
-    isExportModalOpen,
-    isImportModalOpen,
-    teamManifests,
-    exportData,
-    completedPlan,
-    requiredApiKeys,
-    vaultValues,
-    isReadyForDeployment,
-    agentUsingToolId,
+    isExportTeamModalOpen,
+    isImportTeamModalOpen,
+    isCreateAgentModalOpen,
+    isExportAgentModalOpen,
+    isImportAgentModalOpen,
+    isDeleteAgentModalOpen,
+    exportTeamData,
+    selectedAgentId,
     allAgents,
-    planningDelay,
-    stepExecutionDelay,
-    failureChance,
-    setMissionObjective,
-    setTargetAudience,
-    setKpis,
-    setDesiredOutcomes,
-    setSelectedTeam,
-    setSelectedIndustry,
-    setSelectedProvider,
-    setSelectedModel,
-    setSelectedMission,
+    completedPlan,
+    missionObjective,
     setToast,
     setIsAbortModalOpen,
     setIsSummaryModalOpen,
-    setIsExportModalOpen,
-    setIsImportModalOpen,
-    handleDeployMission,
+    setIsExportTeamModalOpen,
+    setIsImportTeamModalOpen,
+    setIsCreateAgentModalOpen,
+    setIsExportAgentModalOpen,
+    setIsImportAgentModalOpen,
+    setIsDeleteAgentModalOpen,
     handleAbortMission,
-    handleImport,
-    handleExport,
-    setVaultValues,
-    handleSlackCommand,
-    setAllAgents,
-    setPlanningDelay,
-    setStepExecutionDelay,
-    setFailureChance,
-  } = useMissionControl();
+    handleImportTeam,
+    handleCreateAgent,
+    handleImportAgent,
+    handleDeleteAgent,
+  } = useMission();
 
+  // Define tabs here, so child components can use the context without prop drilling
   const primaryTabs = [
-    { label: 'Mission Log', component: <MissionLog logs={logs} /> },
-    { label: 'Slack Admin', component: <SlackAdminConsole messages={slackHistory} onSendCommand={handleSlackCommand} isDisabled={isMissionActive} /> },
-    { label: 'Shared Memory', component: <SharedMemoryPanel memory={sharedMemory} /> },
-    { label: 'Secure Vault', component: <SecureVault requiredKeys={requiredApiKeys} vaultValues={vaultValues} onValueChange={(key, value) => setVaultValues(prev => ({...prev, [key]: value}))} /> },
-    { label: 'Agent Forge', component: <AgentForge allAgents={allAgents} setAllAgents={setAllAgents} defaultAgents={initialAllAgents} setToast={setToast} /> },
-    { label: 'Simulation', component: <SimulationControls 
-        planningDelay={planningDelay}
-        setPlanningDelay={setPlanningDelay}
-        stepExecutionDelay={stepExecutionDelay}
-        setStepExecutionDelay={setStepExecutionDelay}
-        failureChance={failureChance}
-        setFailureChance={setFailureChance}
-    />},
+    { label: 'Mission Log', component: <MissionLog /> },
+    { label: 'Orchestrator Chat', component: <OrchestratorChat /> },
+    { label: 'Slack Admin', component: <SlackAdminConsole /> },
+    { label: 'Shared Memory', component: <SharedMemoryPanel /> },
+    { label: 'Secure Vault', component: <SecureVault /> },
+    { label: 'Agent Forge', component: <AgentForge /> },
+    { label: 'Simulation', component: <SimulationControls /> },
   ];
+
+  const agentToExport = selectedAgentId ? allAgents[selectedAgentId] : null;
+  const agentToDelete = selectedAgentId ? allAgents[selectedAgentId] : null;
 
   return (
     <div className="bg-black min-h-screen font-sans text-gray-200 flex flex-col">
-      <Header isMissionActive={isMissionActive} onAbortMission={() => setIsAbortModalOpen(true)} />
+      <Header />
       
       <main className="container mx-auto p-4 flex-grow flex flex-col gap-4">
         <div className="flex-grow min-h-0">
-          <ResizablePanel direction="horizontal" initialSize={70}>
+          <ResizablePanel direction="horizontal" initialSize={60}>
             {/* Left side of resizable panel */}
             <div className="h-full flex flex-col gap-4">
               <div className="flex-grow min-h-0">
                 <ResizablePanel direction="horizontal" initialSize={30}>
-                  <ControlPanel
-                    selectedTeam={selectedTeam}
-                    setSelectedTeam={setSelectedTeam}
-                    selectedIndustry={selectedIndustry}
-                    setSelectedIndustry={setSelectedIndustry}
-                    selectedMission={selectedMission}
-                    setSelectedMission={setSelectedMission}
-                    setMissionObjective={setMissionObjective}
-                    selectedProvider={selectedProvider}
-                    setSelectedProvider={setSelectedProvider}
-                    selectedModel={selectedModel}
-                    setSelectedModel={setSelectedModel}
-                    isMissionActive={isMissionActive}
-                    onExport={handleExport}
-                    onImport={() => setIsImportModalOpen(true)}
-                    teamManifests={teamManifests}
-                  />
-                  <OrchestratorConsole
-                    missionObjective={missionObjective}
-                    setMissionObjective={setMissionObjective}
-                    targetAudience={targetAudience}
-                    setTargetAudience={setTargetAudience}
-                    kpis={kpis}
-                    setKpis={setKpis}
-                    desiredOutcomes={desiredOutcomes}
-                    setDesiredOutcomes={setDesiredOutcomes}
-                    onDeploy={handleDeployMission}
-                    isMissionActive={isMissionActive}
-                    isReadyForDeployment={isReadyForDeployment}
-                    missionPlan={missionPlan}
-                    missionExecutionIndex={missionExecutionIndex}
-                    selectedProvider={selectedProvider}
-                    selectedModel={selectedModel}
-                  />
+                  <ControlPanel />
+                  <OrchestratorConsole />
                 </ResizablePanel>
               </div>
               <div className="h-[40%] min-h-[200px] flex-shrink-0">
-                <AgentSwarmView agents={agents} agentUsingToolId={agentUsingToolId} />
+                <AgentSwarmView />
               </div>
             </div>
             
@@ -163,6 +137,25 @@ const App: React.FC = () => {
         <p>Are you sure you want to abort the current mission? All progress will be lost and agents will be reset to standby.</p>
       </ConfirmModal>
 
+       <ConfirmModal
+        isOpen={isDeleteAgentModalOpen}
+        onClose={() => setIsDeleteAgentModalOpen(false)}
+        onConfirm={handleDeleteAgent}
+        title="DELETE AGENT"
+        confirmText="DELETE PERMANENTLY"
+        confirmButtonClass="bg-red-600 hover:bg-red-700"
+      >
+        {agentToDelete ? (
+            <p>
+                Are you sure you want to permanently delete the agent{' '}
+                <strong className="text-pink-400">{agentToDelete.name}</strong>? This action
+                cannot be undone. The agent will also be removed from any teams it belongs to.
+            </p>
+        ) : (
+            <p>Are you sure you want to delete this agent? This action cannot be undone.</p>
+        )}
+      </ConfirmModal>
+
       <MissionSummaryModal 
         isOpen={isSummaryModalOpen}
         onClose={() => setIsSummaryModalOpen(false)}
@@ -171,15 +164,33 @@ const App: React.FC = () => {
       />
 
       <ExportModal 
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        exportData={exportData}
+        isOpen={isExportTeamModalOpen}
+        onClose={() => setIsExportTeamModalOpen(false)}
+        exportData={exportTeamData}
       />
 
       <ImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onImport={handleImport}
+        isOpen={isImportTeamModalOpen}
+        onClose={() => setIsImportTeamModalOpen(false)}
+        onImport={handleImportTeam}
+      />
+
+      <CreateAgentModal
+        isOpen={isCreateAgentModalOpen}
+        onClose={() => setIsCreateAgentModalOpen(false)}
+        onCreate={handleCreateAgent}
+      />
+
+      <ExportAgentModal
+        isOpen={isExportAgentModalOpen}
+        onClose={() => setIsExportAgentModalOpen(false)}
+        exportData={agentToExport}
+      />
+
+      <ImportAgentModal
+        isOpen={isImportAgentModalOpen}
+        onClose={() => setIsImportAgentModalOpen(false)}
+        onImport={handleImportAgent}
       />
 
       {toast && (
@@ -190,6 +201,18 @@ const App: React.FC = () => {
         />
       )}
     </div>
+  );
+};
+
+// =================================================================
+// APP COMPONENT (ROOT)
+// =================================================================
+// The root component now simply wraps the Layout with the state provider.
+const App: React.FC = () => {
+  return (
+    <MissionProvider>
+      <Layout />
+    </MissionProvider>
   );
 };
 

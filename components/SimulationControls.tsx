@@ -1,13 +1,5 @@
 import React from 'react';
-
-interface SimulationControlsProps {
-  planningDelay: number;
-  setPlanningDelay: (value: number) => void;
-  stepExecutionDelay: number;
-  setStepExecutionDelay: (value: number) => void;
-  failureChance: number;
-  setFailureChance: (value: number) => void;
-}
+import { useMission } from '../App';
 
 const SliderControl: React.FC<{
   label: string;
@@ -57,14 +49,16 @@ const SliderControl: React.FC<{
   </div>
 );
 
-export const SimulationControls: React.FC<SimulationControlsProps> = ({
-  planningDelay,
-  setPlanningDelay,
-  stepExecutionDelay,
-  setStepExecutionDelay,
-  failureChance,
-  setFailureChance,
-}) => {
+export const SimulationControls: React.FC = () => {
+  const {
+    planningDelay,
+    setPlanningDelay,
+    stepExecutionDelay,
+    setStepExecutionDelay,
+    failureChance,
+    setFailureChance,
+  } = useMission();
+
   return (
     <div className="p-4 bg-sparkle h-full flex flex-col">
       <h2 className="font-display text-pink-400 text-lg mb-2 border-b-2 border-pink-500/30 pb-2 text-glow-pink">

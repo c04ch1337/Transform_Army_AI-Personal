@@ -1,4 +1,3 @@
-// Fix: Added ToolSchema and Tool interfaces to define the structure for agent tools, which were previously undefined.
 // A simplified representation of a JSON schema for tool inputs/outputs.
 export interface ToolSchema {
   type: string;
@@ -19,14 +18,12 @@ export interface Tool {
   authVars?: string[];
 }
 
-// Fix: Added ImportMeta interface for tracking imported manifests.
 export interface ImportMeta {
   source: string;
   sourceType: 'user-paste';
   timestamp: string;
 }
 
-// Fix: Added AgentStatus enum to define possible agent states, which was used but not defined.
 export enum AgentStatus {
     STANDBY = 'STANDBY',
     DEPLOYED = 'DEPLOYED',
@@ -35,6 +32,12 @@ export enum AgentStatus {
     ERROR = 'ERROR',
     COMPROMISED = 'COMPROMISED',
 }
+
+export enum AgentSubStatus {
+    THINKING = 'THINKING',
+    USING_TOOL = 'USING_TOOL',
+}
+
 
 // Represents the static, portable definition of an agent, following the ACoC standard.
 export interface AgentManifest {
@@ -103,6 +106,7 @@ export interface AgentRuntimeState {
   id: string;
   name: string;
   status: AgentStatus;
+  subStatus?: AgentSubStatus | null;
   currentTask: string;
   currentThought?: string;
   manifest: AgentManifest;
@@ -143,6 +147,9 @@ export interface OrchestratorManifest {
   name: string;
   version: string;
   description: string;
+  display?: {
+    avatar: string;
+  };
   teamDoctrine: string; // The high-level strategy for managing teams.
   agentTemplates?: AgentManifest[]; // Optional inline agent templates for dynamic creation.
   sharedMemory?: AgentManifest['memory'];
@@ -182,5 +189,6 @@ export interface SharedMemoryValue {
     value: any;
     writtenBy: string; // agent name
     timestamp: string;
+    citations?: string[];
 }
 export type SharedMemoryContents = Record<string, SharedMemoryValue>;

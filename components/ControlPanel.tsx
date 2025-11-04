@@ -1,43 +1,33 @@
 import React from 'react';
 import { MISSIONS, PROVIDERS, INDUSTRIES } from '../constants';
-import { AgentManifest, AgentTeamManifest } from '../types';
+import { AgentTeamManifest } from '../types';
 import { playClickSound } from '../utils/audio';
+import { useMission } from '../App';
 
-interface ControlPanelProps {
-  selectedTeam: string;
-  setSelectedTeam: (team: string) => void;
-  selectedIndustry: string;
-  setSelectedIndustry: (industry: string) => void;
-  selectedMission: string;
-  setSelectedMission: (mission: string) => void;
-  setMissionObjective: (objective: string) => void;
-  selectedProvider: string;
-  setSelectedProvider: (provider: string) => void;
-  selectedModel: string;
-  setSelectedModel: (model: string) => void;
-  isMissionActive: boolean;
-  onExport: () => void;
-  onImport: () => void;
-  teamManifests: AgentTeamManifest[];
-}
+const ControlPanel: React.FC = () => {
+  const {
+    selectedTeam,
+    setSelectedTeam,
+    selectedIndustry,
+    setSelectedIndustry,
+    selectedMission,
+    setSelectedMission,
+    setMissionObjective,
+    selectedProvider,
+    setSelectedProvider,
+    selectedModel,
+    setSelectedModel,
+    isMissionActive,
+    // Fix: Corrected property name from handleExport to handleExportTeam to match the hook's return value.
+    handleExportTeam,
+    // Fix: Corrected property name from setIsImportModalOpen to setIsImportTeamModalOpen to match the hook's return value.
+    setIsImportTeamModalOpen,
+    teamManifests,
+  } = useMission();
+  
+  const onExport = handleExportTeam;
+  const onImport = () => setIsImportTeamModalOpen(true);
 
-const ControlPanel: React.FC<ControlPanelProps> = ({
-  selectedTeam,
-  setSelectedTeam,
-  selectedIndustry,
-  setSelectedIndustry,
-  selectedMission,
-  setSelectedMission,
-  setMissionObjective,
-  selectedProvider,
-  setSelectedProvider,
-  selectedModel,
-  setSelectedModel,
-  isMissionActive,
-  onExport,
-  onImport,
-  teamManifests,
-}) => {
   const handleTeamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     playClickSound();
     const newTeam = e.target.value;
@@ -59,15 +49,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     playClickSound();
     const newProvider = e.target.value;
     setSelectedProvider(newProvider);
-    // Only set a default model if the provider is supported (Gemini)
-    if (newProvider === 'Google Gemini') {
-        setSelectedModel(PROVIDERS[newProvider][0] || '');
-    } else {
-        setSelectedModel(''); // Clear model for unsupported providers
-    }
+    const models = PROVIDERS[newProvider] || [];
+    setSelectedModel(models[0] || '');
   };
 
-  const isGeminiProvider = selectedProvider === 'Google Gemini';
+  const modelsForProvider = PROVIDERS[selectedProvider] || [];
 
   return (
     <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-700 p-4 rounded-lg shadow-lg bg-sparkle flex flex-col h-full">
@@ -94,12 +80,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           {Object.keys(PROVIDERS).map(provider => <option key={provider} value={provider}>{provider}</option>)}
         </ControlSelect>
 
-        <ControlSelect label="MODEL" value={selectedModel} onChange={e => { playClickSound(); setSelectedModel(e.target.value); }} disabled={isMissionActive || !isGeminiProvider}>
-           {isGeminiProvider ? (
-            PROVIDERS[selectedProvider].map(model => <option key={model} value={model}>{model}</option>)
-          ) : (
-            <option value="">Provider not supported</option>
-          )}
+        <ControlSelect label="MODEL" value={selectedModel} onChange={e => { playClickSound(); setSelectedModel(e.target.value); }} disabled={isMissionActive || modelsForProvider.length === 0}>
+           {modelsForProvider.map(model => <option key={model} value={model}>{model}</option>)}
         </ControlSelect>
       </div>
       <div className="mt-4 pt-4 border-t border-pink-500/30 space-y-2">

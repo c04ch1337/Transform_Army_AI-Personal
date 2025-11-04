@@ -1,12 +1,13 @@
 import React from 'react';
+import { useMission } from '../App';
 
-interface SecureVaultProps {
-  requiredKeys: string[];
-  vaultValues: Record<string, string>;
-  onValueChange: (key: string, value: string) => void;
-}
+export const SecureVault: React.FC = () => {
+  const { requiredApiKeys, vaultValues, setVaultValues } = useMission();
 
-export const SecureVault: React.FC<SecureVaultProps> = ({ requiredKeys, vaultValues, onValueChange }) => {
+  const onValueChange = (key: string, value: string) => {
+    setVaultValues(prev => ({...prev, [key]: value}));
+  };
+
   const getStatus = (key: string) => {
     return vaultValues[key] && vaultValues[key].trim() !== '' ? 'SET' : 'MISSING';
   };
@@ -19,9 +20,9 @@ export const SecureVault: React.FC<SecureVaultProps> = ({ requiredKeys, vaultVal
                 The following API keys and environment variables are required by the selected team.
                 Provide a value for each required key to enable mission deployment.
             </p>
-            {requiredKeys.length > 0 ? (
+            {requiredApiKeys.length > 0 ? (
                 <div className="space-y-3">
-                    {requiredKeys.map(key => (
+                    {requiredApiKeys.map(key => (
                         <div key={key} className="flex items-center justify-between bg-gray-800 p-2 rounded-md border border-gray-700 gap-4">
                             <div className="flex items-center flex-shrink-0">
                                 <span className={`mr-2 text-xs font-bold ${getStatus(key) === 'SET' ? 'text-green-500' : 'text-red-400'}`}>
